@@ -104,7 +104,7 @@ contract BaseV1Pair {
     uint internal immutable decimals0;
     uint internal immutable decimals1;
 
-    uint public reserve0;
+    uint public reserve0;//token0余额
     uint public reserve1;
     uint public blockTimestampLast;
 
