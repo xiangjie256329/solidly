@@ -48,13 +48,13 @@ interface Voter {
     function distribute(address _gauge) external;
 }
 
-// Gauges are used to incentivize pools, they emit reward tokens over 7 days for staked LP tokens
+// Gauges are used to incentivize pools, they emit reward tokens over 7 days for staked LP tokens 激励矿池,它们在 7 天内为质押的 LP 代币发放奖励代币
 contract Gauge {
 
-    address public immutable stake; // the LP token that needs to be staked for rewards
-    address public immutable _ve; // the ve token used for gauges
-    address public immutable bribe;
-    address public immutable voter;
+    address public immutable stake; // the LP token that needs to be staked for rewards,质押的lp地址
+    address public immutable _ve; // the ve token used for gauges 奖励币地址
+    address public immutable bribe; //贿赂
+    address public immutable voter; //投票者
 
     uint public derivedSupply;
     mapping(address => uint) public derivedBalances;
@@ -65,11 +65,11 @@ contract Gauge {
     // default snx staking contract implementation
     mapping(address => uint) public rewardRate;
     mapping(address => uint) public periodFinish;
-    mapping(address => uint) public lastUpdateTime;
-    mapping(address => uint) public rewardPerTokenStored;
+    mapping(address => uint) public lastUpdateTime;//最新更新时间
+    mapping(address => uint) public rewardPerTokenStored;//每个token的奖励历史存储
 
-    mapping(address => mapping(address => uint)) public lastEarn;
-    mapping(address => mapping(address => uint)) public userRewardPerTokenStored;
+    mapping(address => mapping(address => uint)) public lastEarn;//上一次赚取收入
+    mapping(address => mapping(address => uint)) public userRewardPerTokenStored;//用户每个token的奖励历史存储
 
     mapping(address => uint) public tokenIds;
 
@@ -98,7 +98,7 @@ contract Gauge {
     }
 
     /// @notice A record of balance checkpoints for each account, by index
-    mapping (address => mapping (uint => Checkpoint)) public checkpoints;
+    mapping (address => mapping (uint => Checkpoint)) public checkpoints;//每个账户的index检查点
     /// @notice The number of checkpoints for each account
     mapping (address => uint) public numCheckpoints;
     /// @notice A record of balance checkpoints for each token, by index

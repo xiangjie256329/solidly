@@ -145,6 +145,7 @@ contract BaseV1Router01 {
         return IBaseV1Factory(factory).isPair(pair);
     }
 
+    //估算添加流动性可得到的数量
     function quoteAddLiquidity(
         address tokenA,
         address tokenB,
@@ -164,7 +165,7 @@ contract BaseV1Router01 {
             (amountA, amountB) = (amountADesired, amountBDesired);
             liquidity = Math.sqrt(amountA * amountB) - MINIMUM_LIQUIDITY;
         } else {
-
+            
             uint amountBOptimal = quoteLiquidity(amountADesired, reserveA, reserveB);
             if (amountBOptimal <= amountBDesired) {
                 (amountA, amountB) = (amountADesired, amountBOptimal);

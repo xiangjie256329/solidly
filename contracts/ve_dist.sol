@@ -62,9 +62,9 @@ contract ve_dist {
 
     uint constant WEEK = 7 * 86400;
 
-    uint public start_time;
-    uint public time_cursor;
-    mapping(uint => uint) public time_cursor_of;
+    uint public start_time; //开始时间
+    uint public time_cursor;//按周算的开始周时间
+    mapping(uint => uint) public time_cursor_of;//tokenId,weekCursor
     mapping(uint => uint) public user_epoch_of;
 
     uint public last_token_time;
@@ -95,29 +95,29 @@ contract ve_dist {
     }
 
     function _checkpoint_token() internal {
-        uint token_balance = erc20(token).balanceOf(address(this));
-        uint to_distribute = token_balance - token_last_balance;
-        token_last_balance = token_balance;
+        uint token_balance = erc20(token).balanceOf(address(this));//前一步转入的
+        uint to_distribute = token_balance - token_last_balance;//可分配的金额
+        token_last_balance = token_balance;//保存上一次的总金额 
 
         uint t = last_token_time;
-        uint since_last = block.timestamp - t;
+        uint since_last = block.timestamp - t;//计算前后两次的时间差
         last_token_time = block.timestamp;
-        uint this_week = t / WEEK * WEEK;
+        uint this_week = t / WEEK * WEEK;//上一次的对应周开始时间
         uint next_week = 0;
 
-        for (uint i = 0; i < 20; i++) {
+        for (uint i = 0; i < 20; i++) { //循环20次,避免太多次数,交易失败
             next_week = this_week + WEEK;
             if (block.timestamp < next_week) {
-                if (since_last == 0 && block.timestamp == t) {
+                if (since_last == 0 && block.timestamp == t) { //如果刚好是这周的开始时间,则直接加
                     tokens_per_week[this_week] += to_distribute;
-                } else {
+                } else {    //比如说超过了一天,则也将这周的金额加上
                     tokens_per_week[this_week] += to_distribute * (block.timestamp - t) / since_last;
                 }
                 break;
             } else {
-                if (since_last == 0 && next_week == t) {
+                if (since_last == 0 && next_week == t) { //前后两次调用太接近,并且下一周的时间刚好等于上一次时间
                     tokens_per_week[this_week] += to_distribute;
-                } else {
+                } else { //加上一周的数据,继续统计
                     tokens_per_week[this_week] += to_distribute * (next_week - t) / since_last;
                 }
             }
@@ -237,21 +237,21 @@ contract ve_dist {
                     user_point = VotingEscrow(ve).user_point_history(_tokenId, user_epoch);
                 }
             } else {
-                int128 dt = int128(int256(week_cursor - old_user_point.ts));
+                int128 dt = int128(int256(week_cursor - old_user_point.ts));//前后两次的时间差
                 uint balance_of = Math.max(uint(int256(old_user_point.bias - dt * old_user_point.slope)), 0);
                 if (balance_of == 0 && user_epoch > max_user_epoch) break;
                 if (balance_of > 0) {
-                    to_distribute += balance_of * tokens_per_week[week_cursor] / ve_supply[week_cursor];
+                    to_distribute += balance_of * tokens_per_week[week_cursor] / ve_supply[week_cursor];//代币数量*每周代币可分配的奖励/总代币数量,相当于根据占比分配总量
                 }
                 week_cursor += WEEK;
             }
         }
 
-        user_epoch = Math.min(max_user_epoch, user_epoch - 1);
+        user_epoch = Math.min(max_user_epoch, user_epoch - 1);  //更新tokenId的用户数据和周数据
         user_epoch_of[_tokenId] = user_epoch;
         time_cursor_of[_tokenId] = week_cursor;
 
-        emit Claimed(_tokenId, to_distribute, user_epoch, max_user_epoch);
+        emit Claimed(_tokenId, to_distribute, user_epoch, max_user_epoch);//提现消息上链
 
         return to_distribute;
     }
@@ -324,7 +324,7 @@ contract ve_dist {
         return amount;
     }
 
-    function claim_many(uint[] memory _tokenIds) external returns (bool) {
+    function claim_many(uint[] memory _tokenIds) external returns (bool) { //提取多个tokenId的奖励
         if (block.timestamp >= time_cursor) _checkpoint_total_supply();
         uint _last_token_time = last_token_time;
         _last_token_time = _last_token_time / WEEK * WEEK;
