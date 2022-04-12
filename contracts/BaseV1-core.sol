@@ -92,24 +92,24 @@ contract BaseV1Pair {
     // Structure to capture time period obervations every 30 minutes, used for local oracles
     struct Observation {
         uint timestamp;
-        uint reserve0Cumulative;
-        uint reserve1Cumulative;
+        uint reserve0Cumulative; //reserve0每30分钟的累积值
+        uint reserve1Cumulative; //reserve1每30分钟的累积值
     }
 
     // Capture oracle reading every 30 minutes
     uint constant periodSize = 1800;
 
-    Observation[] public observations;
+    Observation[] public observations;//累积值历史数据
 
-    uint internal immutable decimals0;
-    uint internal immutable decimals1;
+    uint internal immutable decimals0;//token0的decimal
+    uint internal immutable decimals1;//token1的decimal
 
     uint public reserve0;//token0余额
-    uint public reserve1;
-    uint public blockTimestampLast;
+    uint public reserve1;//token1余额
+    uint public blockTimestampLast; //上一次区块时间
 
-    uint public reserve0CumulativeLast;
-    uint public reserve1CumulativeLast;
+    uint public reserve0CumulativeLast;//上一次token0的累积值
+    uint public reserve1CumulativeLast;//上一次token1的累积值
 
     // index0 and index1 are used to accumulate fees, this is split out from normal trades to keep the swap "clean"
     // this further allows LP holders to easily claim fees for tokens they have/staked
@@ -204,7 +204,7 @@ contract BaseV1Pair {
 
     // Accrue fees on token0
     function _update0(uint amount) internal {
-        _safeTransfer(token0, fees, amount); // transfer the fees out to BaseV1Fees
+        _safeTransfer(token0, fees, amount); // transfer the fees out to BaseV1Fees,将多出来的转到fees中
         uint256 _ratio = amount * 1e18 / totalSupply; // 1e18 adjustment is removed during claim
         if (_ratio > 0) {
             index0 += _ratio;
@@ -225,19 +225,19 @@ contract BaseV1Pair {
     // this function MUST be called on any balance changes, otherwise can be used to infinitely claim fees
     // Fees are segregated from core funds, so fees can never put liquidity at risk
     function _updateFor(address recipient) internal {
-        uint _supplied = balanceOf[recipient]; // get LP balance of `recipient`
+        uint _supplied = balanceOf[recipient]; // get LP balance of `recipient` //获取目标合约的supply
         if (_supplied > 0) {
-            uint _supplyIndex0 = supplyIndex0[recipient]; // get last adjusted index0 for recipient
+            uint _supplyIndex0 = supplyIndex0[recipient]; // get last adjusted index0 for recipient 获取目标合约的token0的index的金额
             uint _supplyIndex1 = supplyIndex1[recipient];
-            uint _index0 = index0; // get global index0 for accumulated fees
+            uint _index0 = index0; // get global index0 for accumulated fees 
             uint _index1 = index1;
             supplyIndex0[recipient] = _index0; // update user current position to global position
             supplyIndex1[recipient] = _index1;
-            uint _delta0 = _index0 - _supplyIndex0; // see if there is any difference that need to be accrued
+            uint _delta0 = _index0 - _supplyIndex0; // see if there is any difference that need to be accrued 使用最新的index0和上一次的index0,计算差值
             uint _delta1 = _index1 - _supplyIndex1;
             if (_delta0 > 0) {
                 uint _share = _supplied * _delta0 / 1e18; // add accrued difference for each supplied token
-                claimable0[recipient] += _share;
+                claimable0[recipient] += _share; //更新可提现的token0金额
             }
             if (_delta1 > 0) {
                 uint _share = _supplied * _delta1 / 1e18;
@@ -257,19 +257,19 @@ contract BaseV1Pair {
 
     // update reserves and, on the first call per block, price accumulators
     function _update(uint balance0, uint balance1, uint _reserve0, uint _reserve1) internal {
-        uint blockTimestamp = block.timestamp;
-        uint timeElapsed = blockTimestamp - blockTimestampLast; // overflow is desired
+        uint blockTimestamp = block.timestamp; //记录最新时间戳
+        uint timeElapsed = blockTimestamp - blockTimestampLast; // overflow is desired,计算时间间隔
         if (timeElapsed > 0 && _reserve0 != 0 && _reserve1 != 0) {
-            reserve0CumulativeLast += _reserve0 * timeElapsed;
+            reserve0CumulativeLast += _reserve0 * timeElapsed; //reserve0累积值=上一次reserve0*时间间隔
             reserve1CumulativeLast += _reserve1 * timeElapsed;
         }
 
         Observation memory _point = lastObservation();
         timeElapsed = blockTimestamp - _point.timestamp; // compare the last observation with current timestamp, if greater than 30 minutes, record a new event
-        if (timeElapsed > periodSize) {
+        if (timeElapsed > periodSize) { //获取上一次的历史数据,如果相差30分钟则记录一个最新数据
             observations.push(Observation(blockTimestamp, reserve0CumulativeLast, reserve1CumulativeLast));
         }
-        reserve0 = balance0;
+        reserve0 = balance0;//更新reserve及最新时间戳
         reserve1 = balance1;
         blockTimestampLast = blockTimestamp;
         emit Sync(reserve0, reserve1);
@@ -291,7 +291,7 @@ contract BaseV1Pair {
         }
     }
 
-    // gives the current twap price measured from amountIn * tokenIn gives amountOut
+    // gives the current twap price measured from amountIn * tokenIn gives amountOut 根据传入的token地址和金额计算可得到的金额
     function current(address tokenIn, uint amountIn) external view returns (uint amountOut) {
         Observation memory _observation = lastObservation();
         (uint reserve0Cumulative, uint reserve1Cumulative,) = currentCumulativePrices();
@@ -369,15 +369,15 @@ contract BaseV1Pair {
         (address _token0, address _token1) = (token0, token1);
         uint _balance0 = erc20(_token0).balanceOf(address(this));
         uint _balance1 = erc20(_token1).balanceOf(address(this));
-        uint _liquidity = balanceOf[address(this)];
+        uint _liquidity = balanceOf[address(this)]; //获取此合约的流动性代币余额,如果销毁会提前把流动性转入
 
         uint _totalSupply = totalSupply; // gas savings, must be defined here since totalSupply can update in _mintFee
-        amount0 = _liquidity * _balance0 / _totalSupply; // using balances ensures pro-rata distribution
-        amount1 = _liquidity * _balance1 / _totalSupply; // using balances ensures pro-rata distribution
+        amount0 = _liquidity * _balance0 / _totalSupply; // using balances ensures pro-rata distribution 计算amount0的数量
+        amount1 = _liquidity * _balance1 / _totalSupply; // using balances ensures pro-rata distribution 计算amount1的数量
         require(amount0 > 0 && amount1 > 0, 'ILB'); // BaseV1: INSUFFICIENT_LIQUIDITY_BURNED
-        _burn(address(this), _liquidity);
-        _safeTransfer(_token0, to, amount0);
-        _safeTransfer(_token1, to, amount1);
+        _burn(address(this), _liquidity);   
+        _safeTransfer(_token0, to, amount0);//将amount0转回给to地址
+        _safeTransfer(_token1, to, amount1);//将amount1转回给to地址
         _balance0 = erc20(_token0).balanceOf(address(this));
         _balance1 = erc20(_token1).balanceOf(address(this));
 
@@ -390,29 +390,29 @@ contract BaseV1Pair {
         require(!BaseV1Factory(factory).isPaused());
         require(amount0Out > 0 || amount1Out > 0, 'IOA'); // BaseV1: INSUFFICIENT_OUTPUT_AMOUNT
         (uint _reserve0, uint _reserve1) =  (reserve0, reserve1);
-        require(amount0Out < _reserve0 && amount1Out < _reserve1, 'IL'); // BaseV1: INSUFFICIENT_LIQUIDITY
+        require(amount0Out < _reserve0 && amount1Out < _reserve1, 'IL'); // BaseV1: INSUFFICIENT_LIQUIDITY,余额不足,则不往下走
 
         uint _balance0;
         uint _balance1;
         { // scope for _token{0,1}, avoids stack too deep errors
         (address _token0, address _token1) = (token0, token1);
-        require(to != _token0 && to != _token1, 'IT'); // BaseV1: INVALID_TO
-        if (amount0Out > 0) _safeTransfer(_token0, to, amount0Out); // optimistically transfer tokens
-        if (amount1Out > 0) _safeTransfer(_token1, to, amount1Out); // optimistically transfer tokens
-        if (data.length > 0) IBaseV1Callee(to).hook(msg.sender, amount0Out, amount1Out, data); // callback, used for flash loans
-        _balance0 = erc20(_token0).balanceOf(address(this));
-        _balance1 = erc20(_token1).balanceOf(address(this));
+        require(to != _token0 && to != _token1, 'IT'); // BaseV1: INVALID_TO //不能往token0或token1的地址转账
+        if (amount0Out > 0) _safeTransfer(_token0, to, amount0Out); // optimistically transfer tokens,如果amount0Out大于0,则直接向to地址转amount0Out个token0
+        if (amount1Out > 0) _safeTransfer(_token1, to, amount1Out); // optimistically transfer tokens,如果amount1Out大于0,则直接向to地址转amount1Out个token1
+        if (data.length > 0) IBaseV1Callee(to).hook(msg.sender, amount0Out, amount1Out, data); // callback, used for flash loans //闪电贷回调相关
+        _balance0 = erc20(_token0).balanceOf(address(this)); //转完账检查当前合约的token0余额
+        _balance1 = erc20(_token1).balanceOf(address(this)); //转完账检查当前合约的token1余额
         }
-        uint amount0In = _balance0 > _reserve0 - amount0Out ? _balance0 - (_reserve0 - amount0Out) : 0;
-        uint amount1In = _balance1 > _reserve1 - amount1Out ? _balance1 - (_reserve1 - amount1Out) : 0;
+        uint amount0In = _balance0 > _reserve0 - amount0Out ? _balance0 - (_reserve0 - amount0Out) : 0;//计算token0真实残余,比如说reserve105,转出5,剩余101,则amount0In为1
+        uint amount1In = _balance1 > _reserve1 - amount1Out ? _balance1 - (_reserve1 - amount1Out) : 0;//计算token1真实残余
         require(amount0In > 0 || amount1In > 0, 'IIA'); // BaseV1: INSUFFICIENT_INPUT_AMOUNT
         { // scope for reserve{0,1}Adjusted, avoids stack too deep errors
         (address _token0, address _token1) = (token0, token1);
-        if (amount0In > 0) _update0(amount0In / 10000); // accrue fees for token0 and move them out of pool
+        if (amount0In > 0) _update0(amount0In / 10000); // accrue fees for token0 and move them out of pool,把
         if (amount1In > 0) _update1(amount1In / 10000); // accrue fees for token1 and move them out of pool
         _balance0 = erc20(_token0).balanceOf(address(this)); // since we removed tokens, we need to reconfirm balances, can also simply use previous balance - amountIn/ 10000, but doing balanceOf again as safety check
         _balance1 = erc20(_token1).balanceOf(address(this));
-        // The curve, either x3y+y3x for stable pools, or x*y for volatile pools
+        // The curve, either x3y+y3x for stable pools, or x*y for volatile pools 如果是稳定池,则需要满足公式:x3y+y3x >= k,不稳定池(有无偿损失)则满足公式xy>k
         require(_k(_balance0, _balance1) >= _k(_reserve0, _reserve1), 'K'); // BaseV1: K
         }
 
@@ -489,8 +489,8 @@ contract BaseV1Pair {
         if (stable) {
             uint _x = x * 1e18 / decimals0;
             uint _y = y * 1e18 / decimals1;
-            uint _a = (_x * _y) / 1e18;
-            uint _b = ((_x * _x) / 1e18 + (_y * _y) / 1e18);
+            uint _a = (_x * _y) / 1e18; // x*y/1e18
+            uint _b = ((_x * _x) / 1e18 + (_y * _y) / 1e18); // x*y(x*x+y*y)/(1e18*1e18)
             return _a * _b / 1e18;  // x3y+y3x >= k
         } else {
             return x * y; // xy >= k
@@ -506,8 +506,8 @@ contract BaseV1Pair {
 
     function _burn(address dst, uint amount) internal {
         _updateFor(dst);
-        totalSupply -= amount;
-        balanceOf[dst] -= amount;
+        totalSupply -= amount; //减少totalSupply
+        balanceOf[dst] -= amount;//更新合约的余额
         emit Transfer(dst, address(0), amount);
     }
 
