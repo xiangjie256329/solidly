@@ -56,28 +56,28 @@ contract Gauge {
     address public immutable bribe; //贿赂
     address public immutable voter; //投票者
 
-    uint public derivedSupply;
-    mapping(address => uint) public derivedBalances;
+    uint public derivedSupply;//总存款金额
+    mapping(address => uint) public derivedBalances;//存款金额,和实际有一些区别因为nft用户计算会多一些金额
 
-    uint internal constant DURATION = 7 days; // rewards are released over 7 days
+    uint internal constant DURATION = 7 days; // rewards are released over 7 days 超过7天才有奖励
     uint internal constant PRECISION = 10 ** 18;
 
     // default snx staking contract implementation
-    mapping(address => uint) public rewardRate;
-    mapping(address => uint) public periodFinish;
+    mapping(address => uint) public rewardRate; //token->rate
+    mapping(address => uint) public periodFinish;//token->结束时间(当前时间+7天)
     mapping(address => uint) public lastUpdateTime;//最新更新时间
     mapping(address => uint) public rewardPerTokenStored;//每个token的奖励历史存储
 
     mapping(address => mapping(address => uint)) public lastEarn;//上一次赚取收入
     mapping(address => mapping(address => uint)) public userRewardPerTokenStored;//用户每个token的奖励历史存储
 
-    mapping(address => uint) public tokenIds;
+    mapping(address => uint) public tokenIds;//user->tokenId
 
-    uint public totalSupply;
-    mapping(address => uint) public balanceOf;
+    uint public totalSupply;//总存款
+    mapping(address => uint) public balanceOf;//用户存款
 
-    address[] public rewards;
-    mapping(address => bool) public isReward;
+    address[] public rewards;//奖励币种
+    mapping(address => bool) public isReward;//判断是否是奖励币种
 
     /// @notice A checkpoint for marking balance
     struct Checkpoint {
@@ -98,20 +98,20 @@ contract Gauge {
     }
 
     /// @notice A record of balance checkpoints for each account, by index
-    mapping (address => mapping (uint => Checkpoint)) public checkpoints;//每个账户的index检查点
+    mapping (address => mapping (uint => Checkpoint)) public checkpoints;//每个账户的index检查点 user->checkpoint index->Checkpoint
     /// @notice The number of checkpoints for each account
-    mapping (address => uint) public numCheckpoints;
+    mapping (address => uint) public numCheckpoints;   //user->checkpoint index
     /// @notice A record of balance checkpoints for each token, by index
-    mapping (uint => SupplyCheckpoint) public supplyCheckpoints;
+    mapping (uint => SupplyCheckpoint) public supplyCheckpoints;//checkpoint index->SupplyCheckpoint
     /// @notice The number of checkpoints
-    uint public supplyNumCheckpoints;
+    uint public supplyNumCheckpoints;   //最新的checkpoint
     /// @notice A record of balance checkpoints for each token, by index
-    mapping (address => mapping (uint => RewardPerTokenCheckpoint)) public rewardPerTokenCheckpoints;
+    mapping (address => mapping (uint => RewardPerTokenCheckpoint)) public rewardPerTokenCheckpoints;//token->checkpoint index->Checkpoint
     /// @notice The number of checkpoints for each token
-    mapping (address => uint) public rewardPerTokenNumCheckpoints;
+    mapping (address => uint) public rewardPerTokenNumCheckpoints;//token->checkpoint index
 
-    uint public fees0;
-    uint public fees1;
+    uint public fees0;//token0的总fee
+    uint public fees1;//token0的总fee
 
     event Deposit(address indexed from, uint tokenId, uint amount);
     event Withdraw(address indexed from, uint tokenId, uint amount);
@@ -171,7 +171,7 @@ contract Gauge {
     * @param timestamp The timestamp to get the balance at
     * @return The balance the account had as of the given block
     */
-    function getPriorBalanceIndex(address account, uint timestamp) public view returns (uint) {
+    function getPriorBalanceIndex(address account, uint timestamp) public view returns (uint) {//获取离时间戳最近的检查点下标
         uint nCheckpoints = numCheckpoints[account];
         if (nCheckpoints == 0) {
             return 0;
@@ -203,7 +203,7 @@ contract Gauge {
         return lower;
     }
 
-    function getPriorSupplyIndex(uint timestamp) public view returns (uint) {
+    function getPriorSupplyIndex(uint timestamp) public view returns (uint) {//根据时间戳获取最新的检查点下标
         uint nCheckpoints = supplyNumCheckpoints;
         if (nCheckpoints == 0) {
             return 0;
@@ -235,7 +235,7 @@ contract Gauge {
         return lower;
     }
 
-    function getPriorRewardPerToken(address token, uint timestamp) public view returns (uint, uint) {
+    function getPriorRewardPerToken(address token, uint timestamp) public view returns (uint, uint) { //根据token,时间戳获取最新的rewardPerToken和timestamp
         uint nCheckpoints = rewardPerTokenNumCheckpoints[token];
         if (nCheckpoints == 0) {
             return (0,0);
@@ -267,7 +267,7 @@ contract Gauge {
         return (rewardPerTokenCheckpoints[token][lower].rewardPerToken, rewardPerTokenCheckpoints[token][lower].timestamp);
     }
 
-    function _writeCheckpoint(address account, uint balance) internal {
+    function _writeCheckpoint(address account, uint balance) internal {//更新检查点账户金额
         uint _timestamp = block.timestamp;
         uint _nCheckPoints = numCheckpoints[account];
 
@@ -290,7 +290,7 @@ contract Gauge {
         }
     }
 
-    function _writeSupplyCheckpoint() internal {
+    function _writeSupplyCheckpoint() internal {//更新检查点supply信息
         uint _nCheckPoints = supplyNumCheckpoints;
         uint _timestamp = block.timestamp;
 
@@ -312,25 +312,25 @@ contract Gauge {
     }
 
     function getReward(address account, address[] memory tokens) external lock {
-        require(msg.sender == account || msg.sender == voter);
+        require(msg.sender == account || msg.sender == voter);//自己领自己的,或者voter来领
         _unlocked = 1;
-        Voter(voter).distribute(address(this));
+        Voter(voter).distribute(address(this));//发送奖励
         _unlocked = 2;
 
         for (uint i = 0; i < tokens.length; i++) {
-            (rewardPerTokenStored[tokens[i]], lastUpdateTime[tokens[i]]) = _updateRewardPerToken(tokens[i]);
+            (rewardPerTokenStored[tokens[i]], lastUpdateTime[tokens[i]]) = _updateRewardPerToken(tokens[i]);//存储RewardPerToken奖励
 
             uint _reward = earned(tokens[i], account);
             lastEarn[tokens[i]][account] = block.timestamp;
             userRewardPerTokenStored[tokens[i]][account] = rewardPerTokenStored[tokens[i]];
-            if (_reward > 0) _safeTransfer(tokens[i], account, _reward);
+            if (_reward > 0) _safeTransfer(tokens[i], account, _reward);//转账
 
             emit ClaimRewards(msg.sender, tokens[i], _reward);
         }
 
         uint _derivedBalance = derivedBalances[account];
         derivedSupply -= _derivedBalance;
-        _derivedBalance = derivedBalance(account);
+        _derivedBalance = derivedBalance(account);//这里相当于是重新计算更新一下,因为随着时间的变化,nft锁仓用户的权重会增加
         derivedBalances[account] = _derivedBalance;
         derivedSupply += _derivedBalance;
 
@@ -352,14 +352,14 @@ contract Gauge {
         uint _derived = _balance * 40 / 100;
         uint _adjusted = 0;
         uint _supply = erc20(_ve).totalSupply();
-        if (account == ve(_ve).ownerOf(_tokenId) && _supply > 0) {
+        if (account == ve(_ve).ownerOf(_tokenId) && _supply > 0) {//如果是nft锁仓用户,可以根据权重多拿一些,只要这里计算的值比(_balance * 60 / 100)大就行
             _adjusted = ve(_ve).balanceOfNFT(_tokenId);
             _adjusted = (totalSupply * _adjusted / _supply) * 60 / 100;
         }
         return Math.min((_derived + _adjusted), _balance);
     }
 
-    function batchRewardPerToken(address token, uint maxRuns) external {
+    function batchRewardPerToken(address token, uint maxRuns) external {//根据检查点计算每个token有多少奖励,有可能有一些token较长时间没更新奖励了
         (rewardPerTokenStored[token], lastUpdateTime[token])  = _batchRewardPerToken(token, maxRuns);
     }
 
@@ -397,9 +397,9 @@ contract Gauge {
         return (((Math.min(endTime, periodFinish[token]) - Math.min(Math.max(timestamp0, startTimestamp), periodFinish[token])) * rewardRate[token] * PRECISION / supply), endTime);
     }
 
-    function _updateRewardPerToken(address token) internal returns (uint, uint) {
+    function _updateRewardPerToken(address token) internal returns (uint, uint) {//获取token最近更新时间到supply检查点的
         uint _startTimestamp = lastUpdateTime[token];
-        uint reward = rewardPerTokenStored[token];
+        uint reward = rewardPerTokenStored[token];//存储最新的rewardPerToken
 
         if (supplyNumCheckpoints == 0) {
             return (reward, _startTimestamp);
@@ -409,11 +409,11 @@ contract Gauge {
             return (reward, block.timestamp);
         }
 
-        uint _startIndex = getPriorSupplyIndex(_startTimestamp);
-        uint _endIndex = supplyNumCheckpoints-1;
+        uint _startIndex = getPriorSupplyIndex(_startTimestamp);//拿到token最新的下标
+        uint _endIndex = supplyNumCheckpoints-1;//总的checkpoint最新下标
 
         if (_endIndex - _startIndex > 1) {
-            for (uint i = _startIndex; i < _endIndex-1; i++) {
+            for (uint i = _startIndex; i < _endIndex-1; i++) {//进行累加
                 SupplyCheckpoint memory sp0 = supplyCheckpoints[i];
                 if (sp0.supply > 0) {
                     SupplyCheckpoint memory sp1 = supplyCheckpoints[i+1];
@@ -425,8 +425,8 @@ contract Gauge {
             }
         }
 
-        SupplyCheckpoint memory sp = supplyCheckpoints[_endIndex];
-        if (sp.supply > 0) {
+        SupplyCheckpoint memory sp = supplyCheckpoints[_endIndex];//拿到结尾的数据
+        if (sp.supply > 0) {//再比较一次
             (uint _reward,) = _calcRewardPerToken(token, lastTimeRewardApplicable(token), Math.max(sp.timestamp, _startTimestamp), sp.supply, _startTimestamp);
             reward += _reward;
             _writeRewardPerTokenCheckpoint(token, reward, block.timestamp);
@@ -437,13 +437,13 @@ contract Gauge {
     }
 
     // earned is an estimation, it won't be exact till the supply > rewardPerToken calculations have run
-    function earned(address token, address account) public view returns (uint) {
-        uint _startTimestamp = Math.max(lastEarn[token][account], rewardPerTokenCheckpoints[token][0].timestamp);
+    function earned(address token, address account) public view returns (uint) {//计算赚到的收入
+        uint _startTimestamp = Math.max(lastEarn[token][account], rewardPerTokenCheckpoints[token][0].timestamp);//先获取最大的时间戳
         if (numCheckpoints[account] == 0) {
             return 0;
         }
 
-        uint _startIndex = getPriorBalanceIndex(account, _startTimestamp);
+        uint _startIndex = getPriorBalanceIndex(account, _startTimestamp);//根据账户拿到最近的检查点数据
         uint _endIndex = numCheckpoints[account]-1;
 
         uint reward = 0;
@@ -469,7 +469,7 @@ contract Gauge {
         deposit(erc20(stake).balanceOf(msg.sender), tokenId);
     }
 
-    function deposit(uint amount, uint tokenId) public lock {
+    function deposit(uint amount, uint tokenId) public lock {//用户存款
         require(amount > 0);
 
         _safeTransferFrom(stake, msg.sender, address(this), amount);
@@ -478,25 +478,25 @@ contract Gauge {
 
         if (tokenId > 0) {
             require(ve(_ve).ownerOf(tokenId) == msg.sender);
-            if (tokenIds[msg.sender] == 0) {
+            if (tokenIds[msg.sender] == 0) {//第一次操作
                 tokenIds[msg.sender] = tokenId;
-                Voter(voter).attachTokenToGauge(tokenId, msg.sender);
+                Voter(voter).attachTokenToGauge(tokenId, msg.sender);//投票合约将tokenId和user绑定
             }
             require(tokenIds[msg.sender] == tokenId);
         } else {
-            tokenId = tokenIds[msg.sender];
+            tokenId = tokenIds[msg.sender];//获取tokenId
         }
 
-        uint _derivedBalance = derivedBalances[msg.sender];
+        uint _derivedBalance = derivedBalances[msg.sender];//更新存款金额
         derivedSupply -= _derivedBalance;
         _derivedBalance = derivedBalance(msg.sender);
         derivedBalances[msg.sender] = _derivedBalance;
         derivedSupply += _derivedBalance;
 
-        _writeCheckpoint(msg.sender, _derivedBalance);
+        _writeCheckpoint(msg.sender, _derivedBalance);//更新检查点信息
         _writeSupplyCheckpoint();
 
-        Voter(voter).emitDeposit(tokenId, msg.sender, amount);
+        Voter(voter).emitDeposit(tokenId, msg.sender, amount);//voter发送存款事件
         emit Deposit(msg.sender, tokenId, amount);
     }
 
@@ -512,7 +512,7 @@ contract Gauge {
         withdrawToken(amount, tokenId);
     }
 
-    function withdrawToken(uint amount, uint tokenId) public lock {
+    function withdrawToken(uint amount, uint tokenId) public lock {//提现
         totalSupply -= amount;
         balanceOf[msg.sender] -= amount;
         _safeTransfer(stake, msg.sender, amount);
@@ -520,42 +520,42 @@ contract Gauge {
         if (tokenId > 0) {
             require(tokenId == tokenIds[msg.sender]);
             tokenIds[msg.sender] = 0;
-            Voter(voter).detachTokenFromGauge(tokenId, msg.sender);
+            Voter(voter).detachTokenFromGauge(tokenId, msg.sender);//将tokenId和奖池解除绑定
         } else {
             tokenId = tokenIds[msg.sender];
         }
 
-        uint _derivedBalance = derivedBalances[msg.sender];
+        uint _derivedBalance = derivedBalances[msg.sender];//存款金额更新
         derivedSupply -= _derivedBalance;
         _derivedBalance = derivedBalance(msg.sender);
         derivedBalances[msg.sender] = _derivedBalance;
         derivedSupply += _derivedBalance;
 
-        _writeCheckpoint(msg.sender, derivedBalances[msg.sender]);
+        _writeCheckpoint(msg.sender, derivedBalances[msg.sender]);//更新checkpoint
         _writeSupplyCheckpoint();
 
         Voter(voter).emitWithdraw(tokenId, msg.sender, amount);
         emit Withdraw(msg.sender, tokenId, amount);
     }
 
-    function left(address token) external view returns (uint) {
+    function left(address token) external view returns (uint) {//token的结束时间*奖率,相当于计算还有多少token释放
         if (block.timestamp >= periodFinish[token]) return 0;
         uint _remaining = periodFinish[token] - block.timestamp;
         return _remaining * rewardRate[token];
     }
 
-    function notifyRewardAmount(address token, uint amount) external lock {
+    function notifyRewardAmount(address token, uint amount) external lock {//开启挖矿
         require(token != stake);
         require(amount > 0);
-        if (rewardRate[token] == 0) _writeRewardPerTokenCheckpoint(token, 0, block.timestamp);
-        (rewardPerTokenStored[token], lastUpdateTime[token]) = _updateRewardPerToken(token);
-        _claimFees();
+        if (rewardRate[token] == 0) _writeRewardPerTokenCheckpoint(token, 0, block.timestamp);//更新检查点
+        (rewardPerTokenStored[token], lastUpdateTime[token]) = _updateRewardPerToken(token);//拿到每个token的奖励
+        _claimFees();//获取贿赂奖励
 
-        if (block.timestamp >= periodFinish[token]) {
-            _safeTransferFrom(token, msg.sender, address(this), amount);
+        if (block.timestamp >= periodFinish[token]) {//已结束
+            _safeTransferFrom(token, msg.sender, address(this), amount);//则可以转入,再开始
             rewardRate[token] = amount / DURATION;
         } else {
-            uint _remaining = periodFinish[token] - block.timestamp;
+            uint _remaining = periodFinish[token] - block.timestamp;//未结束则更新rewardRate,相当于增加奖励
             uint _left = _remaining * rewardRate[token];
             require(amount > _left);
             _safeTransferFrom(token, msg.sender, address(this), amount);
@@ -564,7 +564,7 @@ contract Gauge {
         require(rewardRate[token] > 0);
         uint balance = erc20(token).balanceOf(address(this));
         require(rewardRate[token] <= balance / DURATION, "Provided reward too high");
-        periodFinish[token] = block.timestamp + DURATION;
+        periodFinish[token] = block.timestamp + DURATION;//同时要延长,不管有没有结束,都要加7天
         if (!isReward[token]) {
             isReward[token] = true;
             rewards.push(token);

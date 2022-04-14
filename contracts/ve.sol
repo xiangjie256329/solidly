@@ -317,8 +317,8 @@ interface IERC20 {
 }
 
 struct Point {
-    int128 bias;
-    int128 slope; // # -dweight / dt
+    int128 bias; //slope*锁仓时间
+    int128 slope; // # -dweight / dt //锁仓金额/4年  金额有18位小数,是除的进的
     uint ts;
     uint blk; // block
 }

@@ -105,7 +105,7 @@ contract BaseV1Minter {
         return _ve.totalSupply() * _minted / _token.totalSupply();//总锁仓*本周释放/总供应  2000w*1568w/10000w=300w
     }
 
-    // update period can only be called once per cycle (1 week) 一周调用一次
+    // update period can only be called once per cycle (1 week) 一周调用一次,更新并发放奖励
     function update_period() external returns (uint) {
         uint _period = active_period;
         if (block.timestamp >= _period + week && initializer == address(0)) { // only trigger if new week 如果是新的一周,并且已经初始化
