@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.11;
+import "hardhat/console.sol";
 
 /**
 @title Voting Escrow
@@ -318,8 +319,8 @@ interface IERC20 {
 
 struct Point {
     int128 bias; //slope*锁仓时间
-    int128 slope; // # -dweight / dt //锁仓金额/4年  金额有18位小数,是除的进的
-    uint ts;
+    int128 slope; // # -dweight / dt //锁仓金额/4年  金额有18位小数,是除的进的,相当于每秒释放
+    uint ts;    //锁仓时间
     uint blk; // block
 }
 /* We cannot really do block numbers per se b/c slope is per time, not per block
@@ -356,21 +357,21 @@ contract ve is IERC721, IERC721Metadata {
     int128 internal constant iMAXTIME = 4 * 365 * 86400;
     uint internal constant MULTIPLIER = 1 ether;
 
-    address immutable public token;
+    address immutable public token;//平台币
     uint public supply;
-    mapping(uint => LockedBalance) public locked;
+    mapping(uint => LockedBalance) public locked;//tokenId->锁仓金额
 
-    mapping(uint => uint) public ownership_change;
+    mapping(uint => uint) public ownership_change;//tokenId->block number
 
-    uint public epoch;
+    uint public epoch;//检查点周期
     mapping(uint => Point) public point_history; // epoch -> unsigned point
     mapping(uint => Point[1000000000]) public user_point_history; // user -> Point[user_epoch]
 
-    mapping(uint => uint) public user_point_epoch;
-    mapping(uint => int128) public slope_changes; // time -> signed slope change
+    mapping(uint => uint) public user_point_epoch;//tokenId->epoch
+    mapping(uint => int128) public slope_changes; // time -> signed slope change        timestamp->slope(权重)
 
-    mapping(uint => uint) public attachments;
-    mapping(uint => bool) public voted;
+    mapping(uint => uint) public attachments;//tokenId->绑定奖池的数量
+    mapping(uint => bool) public voted;//tokenId->是否有投票
     address public voter;
 
     string constant public name = "veNFT";
@@ -381,23 +382,23 @@ contract ve is IERC721, IERC721Metadata {
     /// @dev Current count of token
     uint internal tokenId;
 
-    /// @dev Mapping from NFT ID to the address that owns it.
+    /// @dev Mapping from NFT ID to the address that owns it. tokenId->owner
     mapping(uint => address) internal idToOwner;
 
     /// @dev Mapping from NFT ID to approved address.
     mapping(uint => address) internal idToApprovals;
 
     /// @dev Mapping from owner address to count of his tokens.
-    mapping(address => uint) internal ownerToNFTokenCount;
+    mapping(address => uint) internal ownerToNFTokenCount;//user->nft count
 
     /// @dev Mapping from owner address to mapping of index to tokenIds
-    mapping(address => mapping(uint => uint)) internal ownerToNFTokenIdList;
+    mapping(address => mapping(uint => uint)) internal ownerToNFTokenIdList;//user->nft index->tokenId
 
     /// @dev Mapping from NFT ID to index of owner
-    mapping(uint => uint) internal tokenToOwnerIndex;
+    mapping(uint => uint) internal tokenToOwnerIndex;//tokenId背后的user->nft count
 
     /// @dev Mapping from owner address to mapping of operator addresses.
-    mapping(address => mapping(address => bool)) internal ownerToOperators;
+    mapping(address => mapping(address => bool)) internal ownerToOperators;//user->approval?->是否有权限
 
     /// @dev Mapping of interface id to bool about whether or not it's supported
     mapping(bytes4 => bool) internal supportedInterfaces;
@@ -451,7 +452,7 @@ contract ve is IERC721, IERC721Metadata {
     /// @notice Get the most recently recorded rate of voting power decrease for `_tokenId`
     /// @param _tokenId token of the NFT
     /// @return Value of the slope
-    function get_last_user_slope(uint _tokenId) external view returns (int128) {
+    function get_last_user_slope(uint _tokenId) external view returns (int128) {//根据最新的epoch,获取用户tokenId的slope
         uint uepoch = user_point_epoch[_tokenId];
         return user_point_history[_tokenId][uepoch].slope;
     }
@@ -460,52 +461,52 @@ contract ve is IERC721, IERC721Metadata {
     /// @param _tokenId token of the NFT
     /// @param _idx User epoch number
     /// @return Epoch time of the checkpoint
-    function user_point_history__ts(uint _tokenId, uint _idx) external view returns (uint) {
+    function user_point_history__ts(uint _tokenId, uint _idx) external view returns (uint) {//根据tokenId,epoch获取检查点的时间
         return user_point_history[_tokenId][_idx].ts;
     }
 
     /// @notice Get timestamp when `_tokenId`'s lock finishes
     /// @param _tokenId User NFT
     /// @return Epoch time of the lock end
-    function locked__end(uint _tokenId) external view returns (uint) {
+    function locked__end(uint _tokenId) external view returns (uint) {//获取锁仓结束时间
         return locked[_tokenId].end;
     }
 
     /// @dev Returns the number of NFTs owned by `_owner`.
     ///      Throws if `_owner` is the zero address. NFTs assigned to the zero address are considered invalid.
     /// @param _owner Address for whom to query the balance.
-    function _balance(address _owner) internal view returns (uint) {
+    function _balance(address _owner) internal view returns (uint) {//返回user有多少个nft
         return ownerToNFTokenCount[_owner];
     }
 
     /// @dev Returns the number of NFTs owned by `_owner`.
     ///      Throws if `_owner` is the zero address. NFTs assigned to the zero address are considered invalid.
     /// @param _owner Address for whom to query the balance.
-    function balanceOf(address _owner) external view returns (uint) {
+    function balanceOf(address _owner) external view returns (uint) {//返回user有多少个nft
         return _balance(_owner);
     }
 
     /// @dev Returns the address of the owner of the NFT.
     /// @param _tokenId The identifier for an NFT.
-    function ownerOf(uint _tokenId) public view returns (address) {
+    function ownerOf(uint _tokenId) public view returns (address) {//根据tokenId返回user
         return idToOwner[_tokenId];
     }
 
     /// @dev Get the approved address for a single NFT.
     /// @param _tokenId ID of the NFT to query the approval of.
-    function getApproved(uint _tokenId) external view returns (address) {
+    function getApproved(uint _tokenId) external view returns (address) {//返回tokenId的赋权地址
         return idToApprovals[_tokenId];
     }
 
     /// @dev Checks if `_operator` is an approved operator for `_owner`.
     /// @param _owner The address that owns the NFTs.
     /// @param _operator The address that acts on behalf of the owner.
-    function isApprovedForAll(address _owner, address _operator) external view returns (bool) {
+    function isApprovedForAll(address _owner, address _operator) external view returns (bool) {//返回user是否对operator地址进行赋权
         return (ownerToOperators[_owner])[_operator];
     }
 
     /// @dev  Get token by index
-    function tokenOfOwnerByIndex(address _owner, uint _tokenIndex) external view returns (uint) {
+    function tokenOfOwnerByIndex(address _owner, uint _tokenIndex) external view returns (uint) {//根据token下标返回user的token id
         return ownerToNFTokenIdList[_owner][_tokenIndex];
     }
 
@@ -513,7 +514,7 @@ contract ve is IERC721, IERC721Metadata {
     /// @param _spender address of the spender to query
     /// @param _tokenId uint ID of the token to be transferred
     /// @return bool whether the msg.sender is approved for the given token ID, is an operator of the owner, or is the owner of the token
-    function _isApprovedOrOwner(address _spender, uint _tokenId) internal view returns (bool) {
+    function _isApprovedOrOwner(address _spender, uint _tokenId) internal view returns (bool) {//判断spender是否有操作tokenId的权限
         address owner = idToOwner[_tokenId];
         bool spenderIsOwner = owner == _spender;
         bool spenderIsApproved = _spender == idToApprovals[_tokenId];
@@ -528,7 +529,7 @@ contract ve is IERC721, IERC721Metadata {
     /// @dev Add a NFT to an index mapping to a given address
     /// @param _to address of the receiver
     /// @param _tokenId uint ID Of the token to be added
-    function _addTokenToOwnerList(address _to, uint _tokenId) internal {
+    function _addTokenToOwnerList(address _to, uint _tokenId) internal {//给to地址增加一个tokenId,更新ownerToNFTokenIdList和tokenToOwnerIndex
         uint current_count = _balance(_to);
 
         ownerToNFTokenIdList[_to][current_count] = _tokenId;
@@ -538,7 +539,7 @@ contract ve is IERC721, IERC721Metadata {
     /// @dev Remove a NFT from an index mapping to a given address
     /// @param _from address of the sender
     /// @param _tokenId uint ID Of the token to be removed
-    function _removeTokenFromOwnerList(address _from, uint _tokenId) internal {
+    function _removeTokenFromOwnerList(address _from, uint _tokenId) internal {//将from地址的owner list中清除tokenId
         // Delete
         uint current_count = _balance(_from)-1;
         uint current_index = tokenToOwnerIndex[_tokenId];
@@ -567,7 +568,7 @@ contract ve is IERC721, IERC721Metadata {
 
     /// @dev Add a NFT to a given address
     ///      Throws if `_tokenId` is owned by someone.
-    function _addTokenTo(address _to, uint _tokenId) internal {
+    function _addTokenTo(address _to, uint _tokenId) internal {//在to地址的owner list中增加tokenId
         // Throws if `_tokenId` is owned by someone
         assert(idToOwner[_tokenId] == address(0));
         // Change the owner
@@ -580,7 +581,7 @@ contract ve is IERC721, IERC721Metadata {
 
     /// @dev Remove a NFT from a given address
     ///      Throws if `_from` is not the current owner.
-    function _removeTokenFrom(address _from, uint _tokenId) internal {
+    function _removeTokenFrom(address _from, uint _tokenId) internal {//from地址清除tokenId
         // Throws if `_from` is not the current owner
         assert(idToOwner[_tokenId] == _from);
         // Change the owner
@@ -593,7 +594,7 @@ contract ve is IERC721, IERC721Metadata {
 
     /// @dev Clear an approval of a given address
     ///      Throws if `_owner` is not the current owner.
-    function _clearApproval(address _owner, uint _tokenId) internal {
+    function _clearApproval(address _owner, uint _tokenId) internal {//清除approval
         // Throws if `_owner` is not the current owner
         assert(idToOwner[_tokenId] == _owner);
         if (idToApprovals[_tokenId] != address(0)) {
@@ -678,7 +679,7 @@ contract ve is IERC721, IERC721Metadata {
     ) public {
         _transferFrom(_from, _to, _tokenId, msg.sender);
 
-        if (_isContract(_to)) {
+        if (_isContract(_to)) {//判断合约地址是否实现了onERC721Received接口
             // Throws if transfer destination is a contract which does not implement 'onERC721Received'
             try IERC721Receiver(_to).onERC721Received(msg.sender, _from, _tokenId, _data) returns (bytes4) {} catch (
                 bytes memory reason
@@ -740,7 +741,7 @@ contract ve is IERC721, IERC721Metadata {
     /// @notice This works even if sender doesn't own any tokens at the time.
     /// @param _operator Address to add to the set of authorized operators.
     /// @param _approved True if the operators is approved, false to revoke approval.
-    function setApprovalForAll(address _operator, bool _approved) external {
+    function setApprovalForAll(address _operator, bool _approved) external {//设置user对operator进行增减权限
         // Throws if `_operator` is the `msg.sender`
         assert(_operator != msg.sender);
         ownerToOperators[msg.sender][_operator] = _approved;
@@ -753,7 +754,7 @@ contract ve is IERC721, IERC721Metadata {
     /// @param _to The address that will receive the minted tokens.
     /// @param _tokenId The token id to mint.
     /// @return A boolean that indicates if the operation was successful.
-    function _mint(address _to, uint _tokenId) internal returns (bool) {
+    function _mint(address _to, uint _tokenId) internal returns (bool) {//铸币,在内存中标识
         // Throws if `_to` is zero address
         assert(_to != address(0));
         // Add NFT. Throws if `_tokenId` is owned by someone
@@ -780,11 +781,11 @@ contract ve is IERC721, IERC721Metadata {
         if (_tokenId != 0) {
             // Calculate slopes and biases
             // Kept at zero when they have to
-            if (old_locked.end > block.timestamp && old_locked.amount > 0) {
-                u_old.slope = old_locked.amount / iMAXTIME;
-                u_old.bias = u_old.slope * int128(int256(old_locked.end - block.timestamp));
+            if (old_locked.end > block.timestamp && old_locked.amount > 0) {//旧的锁仓时间还没结束
+                u_old.slope = old_locked.amount / iMAXTIME; //更新每秒释放
+                u_old.bias = u_old.slope * int128(int256(old_locked.end - block.timestamp));//更新待释放权重
             }
-            if (new_locked.end > block.timestamp && new_locked.amount > 0) {
+            if (new_locked.end > block.timestamp && new_locked.amount > 0) {//如果新的锁仓大于当前时间,则更新新锁仓数据
                 u_new.slope = new_locked.amount / iMAXTIME;
                 u_new.bias = u_new.slope * int128(int256(new_locked.end - block.timestamp));
             }
@@ -810,7 +811,7 @@ contract ve is IERC721, IERC721Metadata {
         // initial_last_point is used for extrapolation to calculate block number
         // (approximately, for *At methods) and save them
         // as we cannot figure that out exactly from inside the contract
-        Point memory initial_last_point = last_point;
+        Point memory initial_last_point = last_point;//先初始化使用最新检查点的数据
         uint block_slope = 0; // dblock/dt
         if (block.timestamp > last_point.ts) {
             block_slope = (MULTIPLIER * (block.number - last_point.blk)) / (block.timestamp - last_point.ts);
@@ -831,7 +832,7 @@ contract ve is IERC721, IERC721Metadata {
                 } else {
                     d_slope = slope_changes[t_i];
                 }
-                last_point.bias -= last_point.slope * int128(int256(t_i - last_checkpoint));
+                last_point.bias -= last_point.slope * int128(int256(t_i - last_checkpoint));//更新剩余待释放
                 last_point.slope += d_slope;
                 if (last_point.bias < 0) {
                     // This can happen
@@ -843,7 +844,7 @@ contract ve is IERC721, IERC721Metadata {
                 }
                 last_checkpoint = t_i;
                 last_point.ts = t_i;
-                last_point.blk = initial_last_point.blk + (block_slope * (t_i - initial_last_point.ts)) / MULTIPLIER;
+                last_point.blk = initial_last_point.blk + (block_slope * (t_i - initial_last_point.ts)) / MULTIPLIER;//计算区块
                 _epoch += 1;
                 if (t_i == block.timestamp) {
                     last_point.blk = block.number;
@@ -860,8 +861,8 @@ contract ve is IERC721, IERC721Metadata {
         if (_tokenId != 0) {
             // If last point was in this block, the slope change has been applied already
             // But in such case we have 0 slope(s)
-            last_point.slope += (u_new.slope - u_old.slope);
-            last_point.bias += (u_new.bias - u_old.bias);
+            last_point.slope += (u_new.slope - u_old.slope);//更新最新的slope
+            last_point.bias += (u_new.bias - u_old.bias);//更新最新的bias
             if (last_point.slope < 0) {
                 last_point.slope = 0;
             }
@@ -877,17 +878,17 @@ contract ve is IERC721, IERC721Metadata {
             // Schedule the slope changes (slope is going down)
             // We subtract new_user_slope from [new_locked.end]
             // and add old_user_slope to [old_locked.end]
-            if (old_locked.end > block.timestamp) {
+            if (old_locked.end > block.timestamp) {//如果旧的锁仓还没结束
                 // old_dslope was <something> - u_old.slope, so we cancel that
-                old_dslope += u_old.slope;
+                old_dslope += u_old.slope;//计算旧的slope
                 if (new_locked.end == old_locked.end) {
                     old_dslope -= u_new.slope; // It was a new deposit, not extension
                 }
                 slope_changes[old_locked.end] = old_dslope;
             }
 
-            if (new_locked.end > block.timestamp) {
-                if (new_locked.end > old_locked.end) {
+            if (new_locked.end > block.timestamp) {//如果新的锁仓大于当前时间
+                if (new_locked.end > old_locked.end) {//并且大于旧的锁仓时间,会更新slope
                     new_dslope -= u_new.slope; // old slope disappeared at this point
                     slope_changes[new_locked.end] = new_dslope;
                 }
@@ -909,19 +910,21 @@ contract ve is IERC721, IERC721Metadata {
     /// @param unlock_time New time when to unlock the tokens, or 0 if unchanged
     /// @param locked_balance Previous locked amount / timestamp
     /// @param deposit_type The type of deposit
-    function _deposit_for(
+    function _deposit_for(//存入
         uint _tokenId,
         uint _value,
         uint unlock_time,
         LockedBalance memory locked_balance,
         DepositType deposit_type
     ) internal {
-        LockedBalance memory _locked = locked_balance;
+        //console.log("tokenId:%d,value:%d,unlock_time:%d,locked_balance:%d,end:%d,deposit_type:%d",_tokenId,_value,unlock_time,locked_balance.amount,locked_balance.end,locked_balance.end,deposit_type);
+        LockedBalance memory _locked = locked_balance;//原来的锁仓
         uint supply_before = supply;
 
-        supply = supply_before + _value;
+        supply = supply_before + _value;//增加后的金额
         LockedBalance memory old_locked;
         (old_locked.amount, old_locked.end) = (_locked.amount, _locked.end);
+        console.log("tokenId:%d,value:%d,unlock_time:%d",_tokenId,_value,unlock_time);
         // Adding to existing lock, or if a lock is expired - creating a new one
         _locked.amount += int128(int256(_value));
         if (unlock_time != 0) {
@@ -949,28 +952,28 @@ contract ve is IERC721, IERC721Metadata {
         voter = _voter;
     }
 
-    function voting(uint _tokenId) external {
+    function voting(uint _tokenId) external {//标识已投票
         require(msg.sender == voter);
         voted[_tokenId] = true;
     }
 
-    function abstain(uint _tokenId) external {
+    function abstain(uint _tokenId) external {//取消投票
         require(msg.sender == voter);
         voted[_tokenId] = false;
     }
 
-    function attach(uint _tokenId) external {
+    function attach(uint _tokenId) external {//绑定奖池
         require(msg.sender == voter);
         attachments[_tokenId] = attachments[_tokenId]+1;
     }
 
-    function detach(uint _tokenId) external {
+    function detach(uint _tokenId) external {//解除绑定
         require(msg.sender == voter);
         attachments[_tokenId] = attachments[_tokenId]-1;
     }
 
-    function merge(uint _from, uint _to) external {
-        require(attachments[_from] == 0 && !voted[_from], "attached");
+    function merge(uint _from, uint _to) external {//合并
+        require(attachments[_from] == 0 && !voted[_from], "attached");//from之前没有投过票或项目绑定
         require(_from != _to);
         require(_isApprovedOrOwner(msg.sender, _from));
         require(_isApprovedOrOwner(msg.sender, _to));
@@ -981,7 +984,7 @@ contract ve is IERC721, IERC721Metadata {
         uint end = _locked0.end >= _locked1.end ? _locked0.end : _locked1.end;
 
         locked[_from] = LockedBalance(0, 0);
-        _checkpoint(_from, _locked0, LockedBalance(0, 0));
+        _checkpoint(_from, _locked0, LockedBalance(0, 0));//清除from
         _burn(_from);
         _deposit_for(_to, value0, end, _locked1, DepositType.MERGE_TYPE);
     }
@@ -991,7 +994,7 @@ contract ve is IERC721, IERC721Metadata {
     }
 
     /// @notice Record global data to checkpoint
-    function checkpoint() external {
+    function checkpoint() external {//更新全局数据
         _checkpoint(0, LockedBalance(0, 0), LockedBalance(0, 0));
     }
 
@@ -1000,7 +1003,7 @@ contract ve is IERC721, IERC721Metadata {
     ///      cannot extend their locktime and deposit for a brand new user
     /// @param _tokenId lock NFT
     /// @param _value Amount to add to user's lock
-    function deposit_for(uint _tokenId, uint _value) external nonreentrant {
+    function deposit_for(uint _tokenId, uint _value) external nonreentrant {//增加锁仓
         LockedBalance memory _locked = locked[_tokenId];
 
         require(_value > 0); // dev: need non-zero value
@@ -1077,10 +1080,10 @@ contract ve is IERC721, IERC721Metadata {
     /// @dev Only possible if the lock has expired
     function withdraw(uint _tokenId) external nonreentrant {
         assert(_isApprovedOrOwner(msg.sender, _tokenId));
-        require(attachments[_tokenId] == 0 && !voted[_tokenId], "attached");
+        require(attachments[_tokenId] == 0 && !voted[_tokenId], "attached");//提现也需要清空投票
 
         LockedBalance memory _locked = locked[_tokenId];
-        require(block.timestamp >= _locked.end, "The lock didn't expire");
+        require(block.timestamp >= _locked.end, "The lock didn't expire");//判定已结束才能提
         uint value = uint(int256(_locked.amount));
 
         locked[_tokenId] = LockedBalance(0,0);
@@ -1139,11 +1142,11 @@ contract ve is IERC721, IERC721Metadata {
             return 0;
         } else {
             Point memory last_point = user_point_history[_tokenId][_epoch];
-            last_point.bias -= last_point.slope * int128(int256(_t) - int256(last_point.ts));
+            last_point.bias -= last_point.slope * int128(int256(_t) - int256(last_point.ts));//slope*(当前时间-上一次更新时间),相当于释放的就不能用了
             if (last_point.bias < 0) {
                 last_point.bias = 0;
             }
-            return uint(int256(last_point.bias));
+            return uint(int256(last_point.bias));//可用权重
         }
     }
 
